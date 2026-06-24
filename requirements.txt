@@ -1,0 +1,11 @@
+# ============================================================
+#  PromptGen — Python Dependencies (Supabase PostgreSQL Version)
+#
+#  Run:  pip install -r requirements.txt
+# ============================================================
+
+Flask==3.0.3
+psycopg2-binary==2.9.9
+python-dotenv==1.0.1
+gunicorn==22.0.0
+

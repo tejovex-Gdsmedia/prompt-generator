@@ -1,0 +1,349 @@
+{% extends 'base.html' %}
+{# ============================================================
+   history.html — Full Prompt History Page (Version 2)
+   
+   Supports:
+   - Category filtering
+   - Live Search (input filter)
+   - Favorites filter & toggle
+   - Copy & Delete
+============================================================ #}
+
+{% block title %}PromptGen — Prompt History{% endblock %}
+
+{% block content %}
+
+<section class="py-5">
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-lg-9">
+
+                <!-- =========================================
+                     PAGE HEADER
+                ========================================== -->
+                <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+                    <div>
+                        <h1 class="text-light fw-bold mb-1" style="font-size: 1.8rem;">
+                            <i class="bi bi-clock-history text-primary me-2"></i>Prompt History
+                        </h1>
+                        <p class="text-muted mb-0" id="promptsCountText">
+                            {% if prompts %}
+                                {{ prompts | length }} saved prompt{{ 's' if prompts | length != 1 }}
+                            {% else %}
+                                No prompts yet
+                            {% endif %}
+                        </p>
+                    </div>
+                    <a href="{{ url_for('main.index') }}" class="btn btn-generate">
+                        <i class="bi bi-plus-lg me-1"></i>New Prompt
+                    </a>
+                </div>
+
+
+                <!-- =========================================
+                     EMPTY STATE
+                     Shown when the prompts list is empty
+                ========================================== -->
+                {% if not prompts %}
+                <div class="empty-state text-center py-5">
+                    <i class="bi bi-inbox display-1 text-muted"></i>
+                    <h4 class="text-muted mt-4 mb-2">No prompts saved yet</h4>
+                    <p class="text-muted">Generate your first prompt to see it here.</p>
+                    <a href="{{ url_for('main.index') }}" class="btn btn-generate mt-3">
+                        <i class="bi bi-stars me-2"></i>Generate a Prompt
+                    </a>
+                </div>
+
+                {% else %}
+
+                <!-- =========================================
+                     SEARCH & FILTERING TOOLBAR [NEW]
+                ========================================== -->
+                <div class="row g-3 mb-4">
+                    <!-- Search Input -->
+                    <div class="col-md-7">
+                        <div class="input-group">
+                            <span class="input-group-text bg-card border-secondary-subtle text-muted">
+                                <i class="bi bi-search"></i>
+                            </span>
+                            <input type="text" 
+                                   id="historySearch" 
+                                   class="form-control input-dark" 
+                                   placeholder="Search prompts by user input or generated text...">
+                        </div>
+                    </div>
+                    
+                    <!-- Filters: Favorites & Category Toggle -->
+                    <div class="col-md-5 d-flex gap-2 justify-content-md-end">
+                        <button class="btn btn-copy d-flex align-items-center gap-1 w-100 justify-content-center" 
+                                id="favFilterBtn" 
+                                onclick="toggleFavFilter()">
+                            <i class="bi bi-star"></i> Show Favorites Only
+                        </button>
+                    </div>
+                </div>
+
+                <!-- =========================================
+                     CATEGORY FILTER BAR
+                ========================================== -->
+                <div class="filter-bar mb-4">
+                    <button class="filter-btn active" data-filter="all" id="filter-all">
+                        All ({{ prompts | length }})
+                    </button>
+
+                    {# Build a unique list of categories that exist in history #}
+                    {% set seen = [] %}
+                    {% for p in prompts %}
+                        {% if p.category not in seen %}
+                            {% set _ = seen.append(p.category) %}
+                            {# Count how many prompts have this category #}
+                            {% set count = prompts | selectattr('category', 'equalto', p.category) | list | length %}
+                            <button class="filter-btn" data-filter="{{ p.category }}" id="filter-{{ p.category | lower | replace(' ', '-') }}">
+                                {{ p.category }} ({{ count }})
+                            </button>
+                        {% endif %}
+                    {% endfor %}
+                </div>
+
+
+                <!-- =========================================
+                     PROMPTS LIST
+                ========================================== -->
+                <div id="promptsList">
+                    {% for prompt in prompts %}
+                    <div class="history-card-full p-4 mb-3" 
+                         data-category="{{ prompt.category }}" 
+                         data-favorite="{{ prompt.is_favorite }}"
+                         data-search-text="{{ (prompt.user_input + ' ' + prompt.generated_prompt) | lower }}"
+                         id="prompt-{{ prompt.id }}">
+
+                        <!-- Card Header: category + timestamp + action buttons -->
+                        <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+
+                            <div>
+                                <span class="category-badge me-2">{{ prompt.category }}</span>
+                                <small class="text-muted">
+                                    <i class="bi bi-calendar3 me-1"></i>
+                                    {{ prompt.created_at.strftime('%B %d, %Y') }}
+                                    &nbsp;at&nbsp;
+                                    {{ prompt.created_at.strftime('%H:%M') }}
+                                </small>
+                            </div>
+
+                            <div class="d-flex gap-2 align-items-center">
+                                <!-- Favorite Star button [NEW] -->
+                                <button class="btn btn-fav-star {% if prompt.is_favorite == 1 %}active{% endif %}"
+                                        onclick="toggleFavorite({{ prompt.id }}, this)"
+                                        title="Toggle Favorite"
+                                        id="fav-btn-{{ prompt.id }}">
+                                    <i class="bi {% if prompt.is_favorite == 1 %}bi-star-fill{% else %}bi-star{% endif %}"></i>
+                                </button>
+
+                                <!-- Copy button — text stored in data-text attribute -->
+                                <button class="btn btn-copy btn-sm"
+                                        onclick="copyText(this)"
+                                        data-text="{{ prompt.generated_prompt }}"
+                                        id="copy-btn-{{ prompt.id }}">
+                                    <i class="bi bi-clipboard me-1"></i>Copy
+                                </button>
+
+                                <!-- Delete form — uses POST for security -->
+                                <form method="POST"
+                                      action="{{ url_for('main.delete', prompt_id=prompt.id) }}"
+                                      onsubmit="return confirm('Are you sure you want to delete this prompt?')">
+                                    <button type="submit" class="btn btn-delete btn-sm" id="delete-btn-{{ prompt.id }}">
+                                        <i class="bi bi-trash3"></i>
+                                    </button>
+                                </form>
+                            </div>
+
+                        </div>
+
+                        <!-- User's original input -->
+                        <p class="text-muted small mb-2">
+                            <i class="bi bi-chat-quote-fill me-1 text-primary"></i>
+                            <strong>Your input:</strong> {{ prompt.user_input }}
+                        </p>
+
+                        <!-- The generated prompt (scrollable if long) -->
+                        <div class="prompt-text-history" id="prompt-text-{{ prompt.id }}">{{ prompt.generated_prompt }}</div>
+
+                    </div>
+                    {% endfor %}
+                    
+                    <!-- Search/Filter No Results Banner [NEW] -->
+                    <div id="noResults" class="text-center py-5 d-none">
+                        <i class="bi bi-search display-3 text-muted"></i>
+                        <h4 class="text-muted mt-4">No prompts match your filters</h4>
+                        <p class="text-muted">Try clearing your search input or choosing another category.</p>
+                    </div>
+                </div>
+                {# end if prompts #}
+                {% endif %}
+
+            </div>
+        </div>
+    </div>
+</section>
+
+{% endblock %}
+
+
+<!-- =====================================================
+     PAGE-SPECIFIC SCRIPTS
+====================================================== -->
+{% block scripts %}
+<script>
+    // State management for filters
+    let currentCategory = 'all';
+    let favoritesOnly = false;
+    let searchQuery = '';
+
+    // Bind search and filter events
+    document.addEventListener('DOMContentLoaded', function() {
+        const searchInput = document.getElementById('historySearch');
+        if (searchInput) {
+            searchInput.addEventListener('input', function(e) {
+                searchQuery = e.target.value.toLowerCase().trim();
+                applyAllFilters();
+            });
+        }
+        
+        // Setup Category filters
+        document.querySelectorAll('.filter-bar .filter-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('.filter-bar .filter-btn').forEach(function(b) {
+                    b.classList.remove('active');
+                });
+                this.classList.add('active');
+                currentCategory = this.getAttribute('data-filter');
+                applyAllFilters();
+            });
+        });
+    });
+
+    // -------------------------------------------------------
+    // FILTER LOGIC COMBINER
+    // Matches category, favorites flag, and search query.
+    // -------------------------------------------------------
+    function applyAllFilters() {
+        const cards = document.querySelectorAll('.history-card-full');
+        let visibleCount = 0;
+
+        cards.forEach(function(card) {
+            const matchesCategory = (currentCategory === 'all' || card.getAttribute('data-category') === currentCategory);
+            const matchesFavorite = (!favoritesOnly || card.getAttribute('data-favorite') === '1');
+            
+            const searchText = card.getAttribute('data-search-text') || '';
+            const matchesSearch = (searchQuery === '' || searchText.includes(searchQuery));
+
+            if (matchesCategory && matchesFavorite && matchesSearch) {
+                card.style.display = 'block';
+                visibleCount++;
+            } else {
+                card.style.display = 'none';
+            }
+        });
+
+        // Toggle No Results Banner
+        const noResults = document.getElementById('noResults');
+        if (noResults) {
+            if (visibleCount === 0) {
+                noResults.classList.remove('d-none');
+            } else {
+                noResults.classList.add('d-none');
+            }
+        }
+    }
+
+    // Toggle Favorite Filter
+    function toggleFavFilter() {
+        const favFilterBtn = document.getElementById('favFilterBtn');
+        favoritesOnly = !favoritesOnly;
+
+        if (favoritesOnly) {
+            favFilterBtn.innerHTML = '<i class="bi bi-star-fill text-warning"></i> Showing Favorites';
+            favFilterBtn.classList.add('btn-fav-active');
+        } else {
+            favFilterBtn.innerHTML = '<i class="bi bi-star"></i> Show Favorites Only';
+            favFilterBtn.classList.remove('btn-fav-active');
+        }
+        applyAllFilters();
+    }
+
+    // -------------------------------------------------------
+    // AJAX TOGGLE FAVORITE (Without reloading page)
+    // -------------------------------------------------------
+    function toggleFavorite(promptId, btn) {
+        // Send AJAX POST request to route
+        fetch('/favorite/' + promptId, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Unauthorized or invalid request');
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.success) {
+                const isFav = data.is_favorite;
+                // Update HTML data-favorite attribute
+                const card = document.getElementById('prompt-' + promptId);
+                if (card) {
+                    card.setAttribute('data-favorite', isFav ? '1' : '0');
+                }
+
+                // Update Button visual class and icon
+                const icon = btn.querySelector('i');
+                if (isFav) {
+                    btn.classList.add('active');
+                    icon.className = 'bi bi-star-fill';
+                } else {
+                    btn.classList.remove('active');
+                    icon.className = 'bi bi-star';
+                }
+
+                // Re-apply filters in case "Show Favorites Only" is active
+                applyAllFilters();
+            }
+        })
+        .catch(err => {
+            console.error('AJAX Error toggling favorite:', err);
+            alert('Could not toggle favorite status. Please log in again.');
+        });
+    }
+
+    // -------------------------------------------------------
+    // COPY TEXT (for history cards)
+    // -------------------------------------------------------
+    function copyText(btn) {
+        var text = btn.getAttribute('data-text');
+
+        navigator.clipboard.writeText(text).then(function() {
+            var toastEl = document.getElementById('copyToast');
+            var toast = new bootstrap.Toast(toastEl, { delay: 2500 });
+            toast.show();
+
+            var original = btn.innerHTML;
+            btn.innerHTML = '<i class="bi bi-check2 me-1"></i>Copied!';
+            btn.style.background = 'rgba(34, 197, 94, 0.2)';
+            btn.style.color = '#4ade80';
+            btn.style.borderColor = 'rgba(34, 197, 94, 0.4)';
+
+            setTimeout(function() {
+                btn.innerHTML = original;
+                btn.style.background = '';
+                btn.style.color = '';
+                btn.style.borderColor = '';
+            }, 2500);
+
+        }).catch(function() {
+            alert('Could not copy automatically. Please select and copy the text manually.');
+        });
+    }
+</script>
+{% endblock %}

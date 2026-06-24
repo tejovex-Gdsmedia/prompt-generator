@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="PromptGen — Generate professional AI prompts instantly for coding, study, resume, writing, business, and more.">
+    <meta name="keywords" content="AI prompt generator, ChatGPT prompts, prompt engineering, Flask app">
+
+    <title>{% block title %}PromptGen — AI Prompt Generator{% endblock %}</title>
+
+    <!-- =====================================================
+         Bootstrap 5 CSS — loaded from CDN (no install needed)
+         Provides: grid, buttons, cards, navbar, toasts, etc.
+    ====================================================== -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <!-- Bootstrap Icons — icon library that works with Bootstrap -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+
+    <!-- Google Fonts — Inter for clean modern typography -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Inline Theme Check (prevents theme flash on load) -->
+    <script>
+        (function() {
+            var savedTheme = localStorage.getItem('theme');
+            if (savedTheme === 'light') {
+                document.documentElement.classList.add('light-mode');
+            }
+        })();
+    </script>
+
+    <!-- Our custom CSS (loaded last so it can override Bootstrap) -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+<!-- =====================================================
+     NAVBAR
+     sticky-top → stays at top when scrolling
+     navbar-dark → white text (for dark backgrounds)
+====================================================== -->
+<nav class="navbar navbar-expand-lg sticky-top" id="mainNavbar">
+    <div class="container">
+
+        <!-- Brand / Logo -->
+        <a class="navbar-brand fw-bold" href="{{ url_for('main.index') }}">
+            <i class="bi bi-stars me-2 text-warning animate-stars"></i>PromptGen
+        </a>
+
+        <!-- Right-side controls (Theme Toggle + Mobile Menu Button) -->
+        <div class="d-flex align-items-center gap-2 order-lg-last">
+            <!-- Theme Toggle Button -->
+            <button class="btn btn-theme-toggle" id="themeToggleBtn" aria-label="Toggle theme">
+                <i class="bi bi-moon-stars-fill theme-icon-dark"></i>
+                <i class="bi bi-sun-fill theme-icon-light d-none"></i>
+            </button>
+
+            <!-- Mobile hamburger button -->
+            <button class="navbar-toggler border-0" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#navMenu"
+                    aria-controls="navMenu" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+        </div>
+
+        <!-- Nav Links -->
+        <div class="collapse navbar-collapse" id="navMenu">
+            <ul class="navbar-nav ms-auto gap-1 align-items-lg-center">
+                <li class="nav-item">
+                    <a class="nav-link {% if request.endpoint == 'main.index' %}active{% endif %}"
+                       href="{{ url_for('main.index') }}">
+                        <i class="bi bi-house me-1"></i>Home
+                    </a>
+                </li>
+                {% if session.get('user_id') %}
+                <li class="nav-item">
+                    <a class="nav-link {% if request.endpoint == 'main.history' %}active{% endif %}"
+                       href="{{ url_for('main.history') }}">
+                        <i class="bi bi-clock-history me-1"></i>History
+                    </a>
+                </li>
+                <li class="nav-item ms-lg-2">
+                    <span class="navbar-user-badge">
+                        <i class="bi bi-person-circle me-1"></i>{{ session.get('username') }}
+                    </span>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link text-danger-hover" href="{{ url_for('main.logout') }}">
+                        <i class="bi bi-box-arrow-right me-1"></i>Logout
+                    </a>
+                </li>
+                {% else %}
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('main.login') }}">
+                        <i class="bi bi-box-arrow-in-right me-1"></i>Log In
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link btn-register-nav" href="{{ url_for('main.register') }}">
+                        <i class="bi bi-person-plus me-1"></i>Register
+                    </a>
+                </li>
+                {% endif %}
+            </ul>
+        </div>
+
+    </div>
+</nav>
+
+
+<!-- =====================================================
+     FLASH MESSAGES
+     Flask's flash() sends messages here.
+     They are shown once, then cleared automatically.
+====================================================== -->
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        <div class="container mt-3">
+            {% for category, message in messages %}
+                <div class="alert alert-{{ 'warning' if category == 'warning' else 'success' }} alert-dismissible fade show" role="alert">
+                    <i class="bi bi-{{ 'exclamation-triangle' if category == 'warning' else 'check-circle' }} me-2"></i>
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        </div>
+    {% endif %}
+{% endwith %}
+
+
+<!-- =====================================================
+     MAIN CONTENT BLOCK
+     Each child template (index.html, history.html)
+     fills in this block with its own content.
+====================================================== -->
+{% block content %}{% endblock %}
+
+
+<!-- =====================================================
+     FOOTER
+====================================================== -->
+<footer class="footer mt-auto py-4">
+    <div class="container text-center">
+        <p class="mb-1">
+            <i class="bi bi-stars text-warning me-1"></i>
+            <strong>PromptGen</strong> &mdash; Generate perfect AI prompts in seconds
+        </p>
+        <small class="text-muted">
+            Phase 1: Core App &nbsp;&bull;&nbsp;
+            Phase 2: Gemini API Integration <span class="badge-coming-soon">Coming Soon</span>
+        </small>
+    </div>
+</footer>
+
+
+<!-- =====================================================
+     COPY TOAST NOTIFICATION
+     Hidden by default. Shown via JavaScript when user
+     clicks the Copy button.
+====================================================== -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index: 9999">
+    <div id="copyToast" class="toast align-items-center border-0" role="alert"
+         aria-live="assertive" aria-atomic="true">
+        <div class="d-flex">
+            <div class="toast-body">
+                <i class="bi bi-check-circle-fill me-2 text-success"></i>
+                Prompt copied to clipboard!
+            </div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto"
+                    data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+    </div>
+</div>
+
+
+<!-- Bootstrap 5 JS Bundle (includes Popper.js) -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+<!-- Our custom JavaScript -->
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+
+<!-- Extra scripts block — child templates can inject JS here -->
+{% block scripts %}{% endblock %}
+
+</body>
+</html>

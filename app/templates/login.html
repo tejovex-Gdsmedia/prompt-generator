@@ -1,0 +1,75 @@
+{% extends 'base.html' %}
+
+{% block title %}PromptGen — Log In{% endblock %}
+
+{% block content %}
+<section class="py-5 d-flex align-items-center" style="min-height: calc(80vh - 100px);">
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-md-6 col-lg-5">
+                
+                <!-- Login Glassmorphism Card -->
+                <div class="auth-card p-4 p-md-5">
+                    <div class="text-center mb-4">
+                        <div class="auth-icon mb-3">
+                            <i class="bi bi-shield-lock-fill text-warning fs-1"></i>
+                        </div>
+                        <h2 class="auth-title fw-bold text-light">Welcome Back</h2>
+                        <p class="text-muted">Log in to manage your prompt history & favorites</p>
+                    </div>
+
+                    <form method="POST" action="{{ url_for('main.login') }}">
+                        <!-- Username field -->
+                        <div class="mb-3">
+                            <label for="username" class="form-label text-subtle">Username</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-transparent border-end-0 border-secondary-subtle">
+                                    <i class="bi bi-person text-muted"></i>
+                                </span>
+                                <input type="text" 
+                                       class="form-control input-dark border-start-0" 
+                                       id="username" 
+                                       name="username" 
+                                       placeholder="Enter your username" 
+                                       required>
+                            </div>
+                        </div>
+
+                        <!-- Password field -->
+                        <div class="mb-4">
+                            <label for="password" class="form-label text-subtle">Password</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-transparent border-end-0 border-secondary-subtle">
+                                    <i class="bi bi-key text-muted"></i>
+                                </span>
+                                <input type="password" 
+                                       class="form-control input-dark border-start-0" 
+                                       id="password" 
+                                       name="password" 
+                                       placeholder="Enter your password" 
+                                       required>
+                            </div>
+                        </div>
+
+                        <!-- Submit Button -->
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-generate w-100">
+                                <i class="bi bi-box-arrow-in-right me-2"></i>Log In
+                            </button>
+                        </div>
+                    </form>
+
+                    <!-- Switch to Register -->
+                    <div class="text-center mt-4">
+                        <p class="text-muted small mb-0">
+                            Don't have an account? 
+                            <a href="{{ url_for('main.register') }}" class="text-warning text-decoration-none fw-semibold">Register here</a>
+                        </p>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}

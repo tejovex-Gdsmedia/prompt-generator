@@ -1,0 +1,269 @@
+{% extends 'base.html' %}
+{# ============================================================
+   index.html — Home Page (Prompt Generator)
+
+   Extends base.html and fills in two blocks:
+   - {% block content %}  → the main page HTML
+   - {% block scripts %}  → page-specific JavaScript
+
+   Variables passed from routes.py → index():
+   - generated_prompt  (str or None) → the built prompt
+   - user_input        (str)         → what the user typed
+   - selected_category (str)         → chosen category
+   - recent            (list)        → last 5 saved prompts
+============================================================ #}
+
+{% block title %}PromptGen — Generate AI Prompts Instantly{% endblock %}
+
+{% block content %}
+
+<!-- =====================================================
+     HERO SECTION
+====================================================== -->
+<section class="hero-section text-center">
+    <div class="container">
+
+        <div class="hero-badge mb-3">
+            <span class="badge-pill">
+                <i class="bi bi-stars me-1"></i>AI Prompt Generator
+            </span>
+        </div>
+
+        <h1 class="hero-title">
+            Generate Perfect AI Prompts
+            <span class="text-gradient d-block">In Seconds</span>
+        </h1>
+
+        <p class="hero-subtitle mx-auto">
+            Enter your goal, pick a category, and get a professional prompt
+            ready to use with ChatGPT, Gemini, Copilot, or any AI tool.
+        </p>
+
+        <!-- Stats row -->
+        <div class="hero-stats mt-4">
+            <div class="stat-item">
+                <span class="stat-number">6</span>
+                <span class="stat-label">Categories</span>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat-item">
+                <span class="stat-number">∞</span>
+                <span class="stat-label">Prompts</span>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat-item">
+                <span class="stat-number">0s</span>
+                <span class="stat-label">Wait Time</span>
+            </div>
+        </div>
+
+    </div>
+</section>
+
+
+<!-- =====================================================
+     GENERATOR SECTION
+====================================================== -->
+<section class="py-4">
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-lg-8">
+
+                <!-- Guest Warning Alert -->
+                {% if not session.get('user_id') %}
+                <div class="guest-banner p-3 mb-4 rounded-3 text-center border border-warning-subtle" style="background: rgba(245, 158, 11, 0.08); backdrop-filter: blur(10px);">
+                    <i class="bi bi-info-circle-fill text-warning me-2 animate-pulse"></i>
+                    You are generating prompts as a <strong>guest</strong>. 
+                    <a href="{{ url_for('main.login') }}" class="text-warning fw-semibold text-decoration-underline ms-1">Log in</a> 
+                    or 
+                    <a href="{{ url_for('main.register') }}" class="text-warning fw-semibold text-decoration-underline">register</a> 
+                    to save prompts to your history.
+                </div>
+                {% endif %}
+
+                <!-- Generator Card -->
+                <div class="generator-card p-4 p-md-5">
+                    <form method="POST" action="{{ url_for('main.index') }}" id="promptForm">
+
+                        <!-- Step 1: User Input -->
+                        <div class="mb-4">
+                            <label for="user_input" class="form-label-custom">
+                                <span class="step-badge">1</span>
+                                What do you want to achieve?
+                            </label>
+                            <textarea
+                                class="form-control input-dark"
+                                id="user_input"
+                                name="user_input"
+                                rows="4"
+                                placeholder="e.g., Build a login system with Flask and MySQL, Explain recursion with examples, Write a cold email to attract investors..."
+                                required
+                            >{{ user_input }}</textarea>
+                            <div class="form-hint">Be specific — the more detail, the better your prompt.</div>
+                        </div>
+
+                        <!-- Step 2: Category Selection -->
+                        <div class="mb-5">
+                            <label class="form-label-custom">
+                                <span class="step-badge">2</span>
+                                Select a Category
+                            </label>
+
+                            {# Loop through categories and render styled radio cards #}
+                            {% set categories = [
+                                ('Coding',          'bi-code-slash',  'Algorithms, APIs, Debugging'),
+                                ('Study',           'bi-book',        'Concepts, Explanations, Q&A'),
+                                ('Resume',          'bi-file-person', 'CVs, Cover Letters, LinkedIn'),
+                                ('Content Writing', 'bi-pen',         'Blogs, SEO, Social Media'),
+                                ('Business',        'bi-briefcase',   'Strategy, Emails, Pitches'),
+                                ('General',         'bi-lightbulb',   'Any topic, open-ended')
+                            ] %}
+
+                            <div class="category-grid">
+                                {% for cat_name, icon, hint in categories %}
+                                <label class="category-option {% if selected_category == cat_name %}selected{% endif %}"
+                                       id="cat-{{ cat_name | lower | replace(' ', '-') }}"
+                                       title="{{ hint }}">
+                                    <input type="radio" name="category" value="{{ cat_name }}"
+                                           {% if selected_category == cat_name %}checked
+                                           {% elif loop.first and not selected_category %}checked
+                                           {% endif %}>
+                                    <i class="bi {{ icon }} cat-icon"></i>
+                                    <span class="cat-name">{{ cat_name }}</span>
+                                    <span class="cat-hint">{{ hint }}</span>
+                                </label>
+                                {% endfor %}
+                            </div>
+                        </div>
+
+                        <!-- Step 3: Generate Button -->
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-generate" id="generateBtn">
+                                <i class="bi bi-stars me-2"></i>Generate Prompt
+                            </button>
+                        </div>
+
+                    </form>
+                </div>
+                <!-- /Generator Card -->
+
+
+                <!-- =========================================
+                     OUTPUT CARD
+                     Only shown after form is submitted (POST).
+                     `generated_prompt` is None on GET requests.
+                ========================================== -->
+                {% if generated_prompt %}
+                <div class="output-card mt-4 p-4" id="outputCard">
+
+                    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                        <h5 class="mb-0 text-light">
+                            <i class="bi bi-stars text-warning me-2"></i>
+                            Generated Prompt
+                            <span class="category-badge ms-2">{{ selected_category }}</span>
+                        </h5>
+                        <button class="btn btn-copy" id="copyBtn" onclick="copyPrompt()">
+                            <i class="bi bi-clipboard me-1"></i>Copy Prompt
+                        </button>
+                    </div>
+
+                    <!-- The actual prompt text -->
+                    <div class="prompt-text" id="generatedPrompt">{{ generated_prompt }}</div>
+
+                    <div class="mt-3 text-muted" style="font-size: 0.8rem;">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Paste this prompt into ChatGPT, Gemini, or any AI assistant.
+                    </div>
+
+                </div>
+                {% endif %}
+
+            </div>
+        </div>
+    </div>
+</section>
+
+
+<!-- =====================================================
+     RECENT HISTORY SECTION
+     Shows last 5 saved prompts.
+     Only rendered if `recent` list is not empty.
+====================================================== -->
+{% if recent %}
+<section class="py-3 pb-5">
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-lg-8">
+
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="text-light mb-0">
+                        <i class="bi bi-clock-history text-primary me-2"></i>Recent Prompts
+                    </h5>
+                    <a href="{{ url_for('main.history') }}" class="btn-view-all">
+                        View All <i class="bi bi-arrow-right ms-1"></i>
+                    </a>
+                </div>
+
+                <div class="row g-3">
+                    {% for prompt in recent %}
+                    <div class="col-12">
+                        <div class="history-card p-3">
+                            <div class="d-flex justify-content-between align-items-start gap-2">
+                                <div class="flex-grow-1">
+                                    <span class="category-badge mb-2 d-inline-block">{{ prompt.category }}</span>
+                                    <p class="text-muted small mb-1">
+                                        <i class="bi bi-chat-quote me-1"></i>
+                                        {{ prompt.user_input[:100] }}{% if prompt.user_input | length > 100 %}...{% endif %}
+                                    </p>
+                                    <p class="prompt-preview mb-0">
+                                        {{ prompt.generated_prompt[:120] }}...
+                                    </p>
+                                </div>
+                                <small class="text-muted text-nowrap">
+                                    {{ prompt.created_at.strftime('%b %d') }}
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+            </div>
+        </div>
+    </div>
+</section>
+{% endif %}
+
+{% endblock %}
+
+
+<!-- =====================================================
+     PAGE-SPECIFIC SCRIPTS
+====================================================== -->
+{% block scripts %}
+<script>
+    // Highlight selected category card when radio changes
+    document.querySelectorAll('.category-option input[type="radio"]').forEach(function(radio) {
+        radio.addEventListener('change', function() {
+            // Remove 'selected' from all
+            document.querySelectorAll('.category-option').forEach(function(opt) {
+                opt.classList.remove('selected');
+            });
+            // Add 'selected' to the clicked one
+            this.closest('.category-option').classList.add('selected');
+        });
+    });
+
+    {% if generated_prompt %}
+    // Scroll smoothly to the output card after page loads
+    document.addEventListener('DOMContentLoaded', function() {
+        var output = document.getElementById('outputCard');
+        if (output) {
+            setTimeout(function() {
+                output.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 400);
+        }
+    });
+    {% endif %}
+</script>
+{% endblock %}
