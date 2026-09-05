@@ -81,7 +81,12 @@ def register():
             return render_template('register.html')
 
         # Check if user exists
-        existing_user = get_user_by_username(username)
+        try:
+            existing_user = get_user_by_username(username)
+        except Exception as e:
+            flash('Database connection failed. Please check your Supabase DATABASE_URL configuration in Vercel.', 'danger')
+            return render_template('register.html')
+
         if existing_user:
             flash('Username is already taken. Choose another one.', 'warning')
             return render_template('register.html')
@@ -94,7 +99,7 @@ def register():
             flash('Registration successful! Please log in.', 'success')
             return redirect(url_for('main.login'))
         else:
-            flash('Could not create account. Please try again.', 'warning')
+            flash('Could not create account. Please check your database settings.', 'warning')
 
     return render_template('register.html')
 
@@ -118,7 +123,12 @@ def login():
             flash('All fields are required.', 'warning')
             return render_template('login.html')
 
-        user = get_user_by_username(username)
+        try:
+            user = get_user_by_username(username)
+        except Exception as e:
+            flash('Database connection failed. Please check your Supabase DATABASE_URL configuration in Vercel.', 'danger')
+            return render_template('login.html')
+
         if user and check_password_hash(user['password_hash'], password):
             # Save user identity in Flask session
             session['user_id'] = user['id']
