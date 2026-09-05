@@ -24,7 +24,12 @@ def get_db():
     if not db_url:
         raise ValueError("DATABASE_URL is not set. Please add DATABASE_URL in environment variables.")
 
-    conn = psycopg2.connect(db_url)
+    # Fix postgres:// URL scheme if provided by legacy tools
+    if db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql://", 1)
+
+    # 4 second timeout prevents Vercel serverless function from timing out with 500/504
+    conn = psycopg2.connect(db_url, connect_timeout=4)
 
     if not _tables_initialized:
         try:
@@ -116,8 +121,9 @@ def get_user_by_username(username):
     """
     Fetches a user from the users table by username.
     """
-    db = get_db()
+    db = None
     try:
+        db = get_db()
         with db.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute(
                 "SELECT * FROM users WHERE username = %s",
@@ -129,7 +135,11 @@ def get_user_by_username(username):
             return dict(row)
         return None
     except Exception as e:
-        db.close()
+        if db:
+            try:
+                db.close()
+            except Exception:
+                pass
         raise e
 
 

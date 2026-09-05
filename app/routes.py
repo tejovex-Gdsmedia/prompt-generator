@@ -99,7 +99,7 @@ def register():
             flash('Registration successful! Please log in.', 'success')
             return redirect(url_for('main.login'))
         else:
-            flash('Could not create account. Please check your database settings.', 'warning')
+            flash('Could not create account. Please check your database settings.', 'danger')
 
     return render_template('register.html')
 
