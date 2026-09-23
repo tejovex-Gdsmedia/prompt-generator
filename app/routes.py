@@ -1,17 +1,14 @@
 # ============================================================
-#  app/routes.py — URL Routes (Version 2)
-#
-#  This file maps URLs to Python functions.
-#  Updates include user auth, scope checking, and favorite endpoints.
+#  app/routes.py — URL Routes
 # ============================================================
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
 from app.models import (
     save_prompt, get_all_prompts, delete_prompt, get_recent_prompts,
-    create_user, get_user_by_username, get_user_by_id, toggle_favorite
+    create_user, get_user_by_username, get_user_by_email, get_user_by_id, toggle_favorite
 )
-from app.prompt_builder import build_prompt
+from app.prompt_builder import generate_prompt
 
 # Create a Blueprint named 'main'
 main = Blueprint('main', __name__)
@@ -24,13 +21,11 @@ main = Blueprint('main', __name__)
 def index():
     """
     GET  → Show the prompt generator form
-    POST → Read form data, build prompt, save if logged in, show result
+    POST → Read form data, build AI prompt with Gemini, save if logged in, show result
     """
     generated_prompt = None
     user_input = ''
-    selected_category = ''
-    
-    # Check if user is logged in
+    selected_category = 'General'
     user_id = session.get('user_id')
 
     if request.method == 'POST':
@@ -38,14 +33,17 @@ def index():
         selected_category = request.form.get('category', 'General')
 
         if user_input:
-            # Build the prompt
-            generated_prompt = build_prompt(user_input, selected_category)
-
-            # Save only if user is logged in
-            if user_id:
-                save_prompt(user_id, user_input, selected_category, generated_prompt)
-            else:
-                flash('Prompt generated! Log in or Register to save your prompts permanently.', 'warning')
+            try:
+                generated_prompt = generate_prompt(user_input, selected_category)
+                if not generated_prompt:
+                    flash('Prompt generation failed. Please try again.', 'warning')
+                elif user_id:
+                    save_prompt(user_id, user_input, selected_category, generated_prompt)
+                else:
+                    flash('Prompt generated! Log in or Register to save your prompts permanently.', 'warning')
+            except Exception as e:
+                flash(f'Error generating prompt: {str(e)}', 'danger')
+                generated_prompt = None
         else:
             flash('Please enter a goal or task before generating.', 'warning')
 
@@ -67,33 +65,37 @@ def index():
 @main.route('/register', methods=['GET', 'POST'])
 def register():
     """
-    Handles new user signups.
+    Handles new user signups with username, email, and password.
     """
     if 'user_id' in session:
         return redirect(url_for('main.index'))
 
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
+        email = request.form.get('email', '').strip()
         password = request.form.get('password', '')
 
-        if not username or not password:
+        if not username or not email or not password:
             flash('All fields are required.', 'warning')
             return render_template('register.html')
 
-        # Check if user exists
+        # Check if username or email already exists
         try:
-            existing_user = get_user_by_username(username)
-        except Exception as e:
-            flash('Database connection failed. Please check your Supabase DATABASE_URL configuration in Vercel.', 'danger')
-            return render_template('register.html')
+            if get_user_by_email(email):
+                flash('Email already registered. Please log in or use another email.', 'warning')
+                return render_template('register.html')
 
-        if existing_user:
-            flash('Username is already taken. Choose another one.', 'warning')
+            if get_user_by_username(username):
+                flash('Username is already taken. Choose another one.', 'warning')
+                return render_template('register.html')
+
+        except Exception as e:
+            flash('Database connection failed. Please check your Supabase DATABASE_URL configuration.', 'danger')
             return render_template('register.html')
 
         # Create user
         hashed_password = generate_password_hash(password)
-        new_user_id = create_user(username, hashed_password)
+        new_user_id = create_user(username, email, hashed_password)
         
         if new_user_id:
             flash('Registration successful! Please log in.', 'success')
@@ -126,7 +128,7 @@ def login():
         try:
             user = get_user_by_username(username)
         except Exception as e:
-            flash('Database connection failed. Please check your Supabase DATABASE_URL configuration in Vercel.', 'danger')
+            flash('Database connection failed. Please check your Supabase DATABASE_URL configuration.', 'danger')
             return render_template('login.html')
 
         if user and check_password_hash(user['password_hash'], password):
