@@ -8,22 +8,26 @@ from psycopg2.extras import RealDictCursor
 from datetime import datetime
 from flask import current_app
 
-_tables_initialized = False
+# Fallback connection string for Supabase PostgreSQL
+FALLBACK_DATABASE_URL = "postgresql://postgres:PromptGen2024Secure@db.wrpcdshtlbqrbguffwnn.supabase.co:5432/postgres?sslmode=require"
 
 
 def get_db():
     """
     Opens a connection to the Supabase PostgreSQL database.
     Ensures SSL mode is enabled for production and returns (conn, cursor).
+    Optimized for Vercel serverless cold starts.
     """
-    global _tables_initialized
-
     database_url = os.environ.get('DATABASE_URL', '')
     if not database_url and current_app:
-        database_url = current_app.config.get('DATABASE_URL', '')
+        try:
+            database_url = current_app.config.get('DATABASE_URL', '')
+        except Exception:
+            pass
 
     if not database_url:
-        raise ValueError("DATABASE_URL is not set in environment variables.")
+        print("[DB INFO] DATABASE_URL not set in environment or config. Using fallback Supabase URL.")
+        database_url = FALLBACK_DATABASE_URL
 
     # Fix postgres:// URL scheme if provided by legacy tools
     if database_url.startswith("postgres://"):
@@ -34,38 +38,16 @@ def get_db():
         separator = '&' if '?' in database_url else '?'
         database_url += f'{separator}sslmode=require'
 
-    conn = psycopg2.connect(database_url, connect_timeout=5)
-    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    print(f"[DB INFO] Connecting to database (URL prefix): {database_url[:50]}...")
 
-    if not _tables_initialized:
-        try:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    CREATE TABLE IF NOT EXISTS users (
-                        id SERIAL PRIMARY KEY,
-                        username VARCHAR(100) UNIQUE NOT NULL,
-                        email VARCHAR(255) UNIQUE,
-                        password_hash VARCHAR(255) NOT NULL,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    );
-                    ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255) UNIQUE;
-                    CREATE TABLE IF NOT EXISTS prompts (
-                        id SERIAL PRIMARY KEY,
-                        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-                        user_input TEXT NOT NULL,
-                        category VARCHAR(50) NOT NULL,
-                        generated_prompt TEXT NOT NULL,
-                        is_favorite INTEGER DEFAULT 0,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    );
-                """)
-                conn.commit()
-            _tables_initialized = True
-        except Exception as e:
-            conn.rollback()
-            print(f"Warning: could not auto-create/update tables: {e}")
-
-    return conn, cursor
+    try:
+        # Connect without restrictive timeout to survive Vercel cold starts
+        conn = psycopg2.connect(database_url)
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        return conn, cursor
+    except Exception as e:
+        print(f"[DB ERROR] Database connection failed: {e}")
+        raise e
 
 
 def rows_to_dicts(rows):
@@ -100,7 +82,7 @@ def create_user(username, email, password_hash):
     try:
         conn, cursor = get_db()
     except Exception as e:
-        print(f"Database connection error in create_user: {e}")
+        print(f"[DB ERROR] Connection failed in create_user: {e}")
         return None
 
     try:
@@ -114,11 +96,11 @@ def create_user(username, email, password_hash):
         return user_id
     except psycopg2.IntegrityError as e:
         conn.rollback()
-        print(f"Integrity error in create_user: {e}")
+        print(f"[DB ERROR] Integrity error in create_user: {e}")
         return None
     except Exception as e:
         conn.rollback()
-        print(f"Error creating user: {e}")
+        print(f"[DB ERROR] Error creating user: {e}")
         return None
     finally:
         try:
@@ -133,7 +115,12 @@ def get_user_by_username(username):
     Fetches a user from the users table by username.
     Returns dict with id, username, email, password_hash or None.
     """
-    conn, cursor = get_db()
+    try:
+        conn, cursor = get_db()
+    except Exception as e:
+        print(f"[DB ERROR] Connection failed in get_user_by_username: {e}")
+        return None
+
     try:
         cursor.execute(
             "SELECT id, username, email, password_hash FROM users WHERE username = %s",
@@ -142,6 +129,9 @@ def get_user_by_username(username):
         row = cursor.fetchone()
         if row:
             return dict(row)
+        return None
+    except Exception as e:
+        print(f"[DB ERROR] Error in get_user_by_username: {e}")
         return None
     finally:
         try:
@@ -159,7 +149,7 @@ def get_user_by_email(email):
     try:
         conn, cursor = get_db()
     except Exception as e:
-        print(f"Database connection error in get_user_by_email: {e}")
+        print(f"[DB ERROR] Connection failed in get_user_by_email: {e}")
         return None
 
     try:
@@ -172,7 +162,7 @@ def get_user_by_email(email):
             return dict(row)
         return None
     except Exception as e:
-        print(f"Error in get_user_by_email: {e}")
+        print(f"[DB ERROR] Error in get_user_by_email: {e}")
         return None
     finally:
         try:
@@ -189,7 +179,7 @@ def get_user_by_id(user_id):
     try:
         conn, cursor = get_db()
     except Exception as e:
-        print(f"Database connection error in get_user_by_id: {e}")
+        print(f"[DB ERROR] Connection failed in get_user_by_id: {e}")
         return None
 
     try:
@@ -202,7 +192,7 @@ def get_user_by_id(user_id):
             return dict(row)
         return None
     except Exception as e:
-        print(f"Error in get_user_by_id: {e}")
+        print(f"[DB ERROR] Error in get_user_by_id: {e}")
         return None
     finally:
         try:
@@ -222,13 +212,19 @@ def save_prompt(user_id, user_input, category, generated_prompt):
     """
     try:
         conn, cursor = get_db()
+    except Exception as e:
+        print(f"[DB ERROR] Connection failed in save_prompt: {e}")
+        return None
+
+    try:
         cursor.execute(
             "INSERT INTO prompts (user_id, user_input, category, generated_prompt) VALUES (%s, %s, %s, %s)",
             (user_id, user_input, category, generated_prompt)
         )
         conn.commit()
     except Exception as e:
-        print(f"Error saving prompt: {e}")
+        conn.rollback()
+        print(f"[DB ERROR] Error saving prompt: {e}")
     finally:
         try:
             cursor.close()
@@ -243,6 +239,11 @@ def get_all_prompts(user_id):
     """
     try:
         conn, cursor = get_db()
+    except Exception as e:
+        print(f"[DB ERROR] Connection failed in get_all_prompts: {e}")
+        return []
+
+    try:
         cursor.execute(
             "SELECT * FROM prompts WHERE user_id = %s ORDER BY created_at DESC",
             (user_id,)
@@ -250,7 +251,7 @@ def get_all_prompts(user_id):
         rows = cursor.fetchall()
         return rows_to_dicts(rows)
     except Exception as e:
-        print(f"Error getting all prompts: {e}")
+        print(f"[DB ERROR] Error getting all prompts: {e}")
         return []
     finally:
         try:
@@ -266,6 +267,11 @@ def get_recent_prompts(user_id, limit=5):
     """
     try:
         conn, cursor = get_db()
+    except Exception as e:
+        print(f"[DB ERROR] Connection failed in get_recent_prompts: {e}")
+        return []
+
+    try:
         cursor.execute(
             "SELECT * FROM prompts WHERE user_id = %s ORDER BY created_at DESC LIMIT %s",
             (user_id, limit)
@@ -273,7 +279,7 @@ def get_recent_prompts(user_id, limit=5):
         rows = cursor.fetchall()
         return rows_to_dicts(rows)
     except Exception as e:
-        print(f"Error getting recent prompts: {e}")
+        print(f"[DB ERROR] Error getting recent prompts: {e}")
         return []
     finally:
         try:
@@ -289,13 +295,19 @@ def delete_prompt(prompt_id, user_id):
     """
     try:
         conn, cursor = get_db()
+    except Exception as e:
+        print(f"[DB ERROR] Connection failed in delete_prompt: {e}")
+        return
+
+    try:
         cursor.execute(
             "DELETE FROM prompts WHERE id = %s AND user_id = %s",
             (prompt_id, user_id)
         )
         conn.commit()
     except Exception as e:
-        print(f"Error deleting prompt: {e}")
+        conn.rollback()
+        print(f"[DB ERROR] Error deleting prompt: {e}")
     finally:
         try:
             cursor.close()
@@ -311,6 +323,11 @@ def toggle_favorite(prompt_id, user_id):
     """
     try:
         conn, cursor = get_db()
+    except Exception as e:
+        print(f"[DB ERROR] Connection failed in toggle_favorite: {e}")
+        return None
+
+    try:
         cursor.execute(
             "SELECT is_favorite FROM prompts WHERE id = %s AND user_id = %s",
             (prompt_id, user_id)
@@ -329,7 +346,8 @@ def toggle_favorite(prompt_id, user_id):
         conn.commit()
         return new_fav
     except Exception as e:
-        print(f"Error toggling favorite: {e}")
+        conn.rollback()
+        print(f"[DB ERROR] Error toggling favorite: {e}")
         return None
     finally:
         try:
